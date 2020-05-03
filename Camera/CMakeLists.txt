@@ -31,3 +31,8 @@ target_link_libraries (detect_keypoints ${OpenCV_LIBRARIES})
 
 add_executable (describe_keypoints src/describe_keypoints.cpp)
 target_link_libraries (describe_keypoints ${OpenCV_LIBRARIES})
+
+# Executables for exercise
+add_executable (descriptor_matching src/descriptor_matching.cpp src/structIO.cpp)
+target_link_libraries (descriptor_matching ${OpenCV_LIBRARIES})
+

@@ -51,7 +51,7 @@ void descKeypoints1()
     t = ((double)cv::getTickCount() - t) / cv::getTickFrequency();
     cout << "SIFT Keypoints in " << 1000 * t / 1.0 << " ms" << endl;
 
-
+    
     t = (double) cv::getTickCount();
     sift_features->compute(imgGray, sift_keypoints, descSIFT);
     t = ((double)cv::getTickCount() - t) / cv::getTickFrequency();

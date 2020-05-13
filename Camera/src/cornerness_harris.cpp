@@ -71,6 +71,7 @@ void cornernessHarris()
             }
         }
     }
+    cout << "Total keypoints: " << key_points.size() << endl;
 
     windowName = "Harris Corner NMS";
     cv::namedWindow(windowName, 4);

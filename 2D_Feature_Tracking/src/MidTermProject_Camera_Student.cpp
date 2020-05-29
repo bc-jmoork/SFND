@@ -23,8 +23,8 @@ int main(int argc, const char *argv[])
 {
     // SHITOMASI, HARRIS, FAST, BRISK, ORB, AKAZE, SIFT
     string detectorType = "HARRIS";
-    vector<string> descriptorTypes = {"BRIEF", "ORB", "FREAK", "AKAZE", "SIFT"};
-    //vector<string> descriptorTypes = {"SIFT"};
+    //vector<string> descriptorTypes = {"BRIEF", "ORB", "FREAK", "AKAZE", "SIFT"};
+    vector<string> descriptorTypes = {"SIFT"};
     
     for (auto descriptorType : descriptorTypes) {
 
@@ -129,7 +129,7 @@ int main(int argc, const char *argv[])
             //// EOF STUDENT ASSIGNMENT
 
             // optional : limit number of keypoints (helpful for debugging and learning)
-            bool bLimitKpts = false;
+            bool bLimitKpts = true;
             if (bLimitKpts)
             {
                 int maxKeypoints = 50;
@@ -143,7 +143,7 @@ int main(int argc, const char *argv[])
             }
             
             // visualize results
-            bVis = false;
+            bVis = true;
             if (bVis)
             {
                 cv::Mat visImage = imgGray.clone();
@@ -205,7 +205,7 @@ int main(int argc, const char *argv[])
                 cout << "#4 : MATCH KEYPOINT DESCRIPTORS done" << endl;
 
                 // visualize matches between current and previous image
-                bVis = false;
+                bVis = true;
                 if (bVis)
                 {
                     cv::Mat matchImg = ((dataBuffer.end() - 1)->cameraImg).clone();

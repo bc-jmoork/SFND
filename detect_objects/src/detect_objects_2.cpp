@@ -13,7 +13,7 @@ using namespace std;
 void detectObjects2()
 {
     // load image from file
-    cv::Mat img = cv::imread("../images/s_thrun.jpg");
+    cv::Mat img = cv::imread("../images/img1.png");
 
     // load class names from file
     string yoloBasePath = "../dat/yolo/";
@@ -32,23 +32,26 @@ void detectObjects2()
     net.setPreferableTarget(cv::dnn::DNN_TARGET_CPU);
 
     // generate 4D blob from input image
+    double t = (double) cv::getTickCount();
     cv::Mat blob;
     double scalefactor = 1/255.0;
     cv::Size size = cv::Size(416, 416);
     cv::Scalar mean = cv::Scalar(0,0,0);
     bool swapRB = false;
     bool crop = false;
-    cv::dnn::blobFromImage(img, blob, scalefactor, size, mean, swapRB, crop);
+    cv::dnn::blobFromImage(img, blob, scalefactor, 
+                           size, mean, swapRB, crop);
 
     // Get names of output layers
     vector<cv::String> names;
     vector<int> outLayers = net.getUnconnectedOutLayers(); // get indices of output layers, i.e. layers with unconnected outputs
     vector<cv::String> layersNames = net.getLayerNames(); // get names of all layers in the network
-    
     names.resize(outLayers.size());
+
     for (size_t i = 0; i < outLayers.size(); ++i) // Get the names of the output layers in names
     {
         names[i] = layersNames[outLayers[i] - 1];
+        cout << names[i] << endl;
     }
 
     // invoke forward propagation through network
@@ -57,14 +60,15 @@ void detectObjects2()
     net.forward(netOutput, names);
 
     // Scan through all bounding boxes and keep only the ones with high confidence
-    float confThreshold = 0.20;
+    float confThreshold = 0.2;
     vector<int> classIds;
     vector<float> confidences;
     vector<cv::Rect> boxes;
     for (size_t i = 0; i < netOutput.size(); ++i)
     {
-        float* data = (float*)netOutput[i].data;
-        for (int j = 0; j < netOutput[i].rows; ++j, data += netOutput[i].cols)
+        float* data = (float*) netOutput[i].data;
+        cout << netOutput[i].rows << "," << netOutput[i].cols << endl;
+        for (int j = 0; j < netOutput[i].rows; ++j, data +=netOutput[i].cols)
         {
             cv::Mat scores = netOutput[i].row(j).colRange(5, netOutput[i].cols);
             cv::Point classId;
@@ -74,6 +78,7 @@ void detectObjects2()
             cv::minMaxLoc(scores, 0, &confidence, 0, &classId);
             if (confidence > confThreshold)
             {
+                cout << "confidence:" << confidence << endl;
                 cv::Rect box; int cx, cy;
                 cx = (int)(data[0] * img.cols);
                 cy = (int)(data[1] * img.rows);
@@ -94,22 +99,22 @@ void detectObjects2()
     vector<int> indices;
     cv::dnn::NMSBoxes(boxes, confidences, confThreshold, nmsThreshold, indices);
     std::vector<BoundingBox> bBoxes;
-    for (auto it = indices.begin(); it != indices.end(); ++it)
-    {
+    for (auto it = indices.begin(); it != indices.end(); ++it) {
         BoundingBox bBox;
         bBox.roi = boxes[*it];
         bBox.classID = classIds[*it];
         bBox.confidence = confidences[*it];
-        bBox.boxID = (int)bBoxes.size(); // zero-based unique identifier for this bounding box
-        
+        bBox.boxID = (int)bBoxes.size(); // zero-based unique identifier for this bounding box        
         bBoxes.push_back(bBox);
     }
-    
-    
+
+    double exec_time = (double) (cv::getTickCount() - t) / cv::getTickFrequency();
+    cout << "Exec time: " << exec_time << endl;
+
+        
     // show results
     cv::Mat visImg = img.clone();
-    for (auto it = bBoxes.begin(); it != bBoxes.end(); ++it)
-    {
+    for (auto it = bBoxes.begin(); it != bBoxes.end(); ++it) {
         // Draw rectangle displaying the bounding box
         int top, left, width, height;
         top = (*it).roi.y;

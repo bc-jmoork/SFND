@@ -4,7 +4,12 @@
 #include <numeric>
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
-
+#include <opencv2/core.hpp>
+#include <opencv2/highgui/highgui.hpp>
+#include <opencv2/imgproc/imgproc.hpp>
+#include <opencv2/features2d.hpp>
+#include <opencv2/xfeatures2d.hpp>
+#include <opencv2/xfeatures2d/nonfree.hpp>
 #include "camFusion.hpp"
 #include "dataStructures.h"
 
@@ -12,7 +17,9 @@ using namespace std;
 
 
 // Create groups of Lidar points whose projection into the camera falls into the same bounding box
-void clusterLidarWithROI(std::vector<BoundingBox> &boundingBoxes, std::vector<LidarPoint> &lidarPoints, float shrinkFactor, cv::Mat &P_rect_xx, cv::Mat &R_rect_xx, cv::Mat &RT)
+void clusterLidarWithROI(std::vector<BoundingBox> &boundingBoxes, 
+std::vector<LidarPoint> &lidarPoints, 
+float shrinkFactor, cv::Mat &P_rect_xx, cv::Mat &R_rect_xx, cv::Mat &RT)
 {
     // loop over all Lidar points and associate them to a 2D bounding box
     cv::Mat X(4, 1, cv::DataType<double>::type);
@@ -151,8 +158,171 @@ void computeTTCLidar(std::vector<LidarPoint> &lidarPointsPrev,
     // ...
 }
 
-
-void matchBoundingBoxes(std::vector<cv::DMatch> &matches, std::map<int, int> &bbBestMatches, DataFrame &prevFrame, DataFrame &currFrame)
+void draw_boxes(cv::Mat& visImg, cv::Rect& roi, std::string label) 
 {
-    // ...
+    // Draw rectangle displaying the bounding box
+    int top, left, width, height;
+    top = roi.y;
+    left = roi.x;
+    width = roi.width;
+    height = roi.height;
+    cv::rectangle(visImg, cv::Point(left, top), 
+    cv::Point(left+width, top+height), cv::Scalar(0, 255, 0), 2);
+    
+    // Display label at the top of the bounding box
+    int baseLine;
+    cv::Size labelSize = getTextSize(label, cv::FONT_ITALIC, 0.5, 1, &baseLine);
+    top = max(top, labelSize.height);
+    rectangle(visImg, cv::Point(left, top - round(1.5*labelSize.height)), cv::Point(left + round(1.5*labelSize.width), top + baseLine), cv::Scalar(255, 255, 255), cv::FILLED);
+    cv::putText(visImg, label, cv::Point(left, top), cv::FONT_ITALIC, 0.75, cv::Scalar(0,0,0),1);
+
+    return;
+}
+
+// returns the bounding box that matches the bounding box id
+std::vector<BoundingBox>::iterator get_bbox_from_boxid(
+    std::vector<BoundingBox>& bbox, 
+    int boxid)
+{
+    for(auto it=bbox.begin(); it != bbox.end(); it++)  {
+        if (it->boxID == boxid) {
+            return it;
+        }
+    }
+}
+
+template <typename T>
+vector<size_t> sort_indexes(const vector<T> &v) {
+
+  // initialize original index locations
+  vector<size_t> idx(v.size());
+  iota(idx.begin(), idx.end(), 0);
+
+  // sort indexes based on comparing values in v
+  // using std::stable_sort instead of std::sort
+  // to avoid unnecessary index re-orderings
+  // when v contains elements of equal values 
+  stable_sort(idx.begin(), idx.end(),
+       [&v](size_t i1, size_t i2) {return v[i1].second > v[i2].second;});
+
+  return idx;
+}
+
+void matchBoundingBoxes(
+    std::vector<cv::DMatch> &matches, 
+    std::map<int, int> &bbBestMatches, 
+    DataFrame &prevFrame, 
+    DataFrame &currFrame)
+{
+    // for each of the keypoint matched, we need to
+    // assign to a unique bounding box in 
+    // the current frame and the bounding box
+    // in the previous frame
+    auto M = currFrame.boundingBoxes.size();
+    auto N = prevFrame.boundingBoxes.size();
+    map<int, std::vector<int>> bbox_count;
+    for(auto i=0; i < N; i++) {
+        bbox_count[i] = std::vector<int>(M, 0);
+    }
+
+    for(auto kptmat = currFrame.kptMatches.begin();
+        kptmat != currFrame.kptMatches.end();
+        kptmat++) {
+        // find the current frame bounding box for the matching keypoint
+        auto cur_kpt = currFrame.keypoints[kptmat->trainIdx];
+        auto cur_box_id = -1;
+        for (auto cur_box=currFrame.boundingBoxes.begin();
+             cur_box != currFrame.boundingBoxes.end();
+             cur_box++) {
+            if (cur_box->roi.contains(cur_kpt.pt)) {
+                cur_box->keypoints.push_back(cur_kpt); // add the keypoint to bounding box roi
+                cur_box_id = cur_box->boxID;
+            }
+        }
+
+        // find the prev. frame bounding box for the matching keypoint
+        auto prev_kpt = prevFrame.keypoints[kptmat->queryIdx];
+        auto prev_box_id = -1;
+        for (auto prev_box=prevFrame.boundingBoxes.begin();
+             prev_box != prevFrame.boundingBoxes.end();
+             prev_box++) {
+            if (prev_box->roi.contains(prev_kpt.pt)) {
+                prev_box_id = prev_box->boxID;
+            }
+        }
+
+        // if proper bounding box exists for the keypoint
+        // in the current and previous frame, save the results
+        // and increment the counter that map between 
+        // current and prev frame bounding box
+        if (cur_box_id >=0 and prev_box_id >= 0 ) {
+            bbox_count[prev_box_id][cur_box_id] += 1;
+        }
+    }
+
+    // for each bounding box in the previous frame
+    // find the bounding box in the current frame
+    // that has maximum number of keypoints
+    vector<pair<BoundingBox*, int>> max_per_box_id;
+    for (auto bbox=prevFrame.boundingBoxes.begin();
+            bbox != prevFrame.boundingBoxes.end();
+            bbox++) {
+            std::vector<int>& v = bbox_count[bbox->boxID];
+            int max_val = *std::max_element(v.begin(), v.end());
+            max_per_box_id.push_back(pair<BoundingBox*, int>(&(*bbox), max_val)); // saves boxID and maximum kpts matched
+    }
+    
+    // start from the maximum kpts match and go to the minimum value..
+    // find the bounding box that has maximum number of matches
+    // and save the results in the bbBestMatches
+    // that maps between the bounding box Id from the previous frame
+    // to the bounding box ID that best matches in the current frame
+    // based on number of keypoint matches that falls within the bbox
+    vector<pair<int, int>> sorted_box_ids;
+    for (auto idx : sort_indexes(max_per_box_id)) {
+        BoundingBox* bbox = max_per_box_id[idx].first;
+        std::vector<int>& v = bbox_count[bbox->boxID];
+        int max_idx = std::max_element(
+            v.begin(), v.end()) - v.begin();
+        
+        if (bbox_count[bbox->boxID][max_idx] > 0) {
+            sorted_box_ids.push_back(pair<int, int>(bbox->boxID, bbox_count[bbox->boxID][max_idx]));
+            bbBestMatches[bbox->boxID] = max_idx;
+            for (auto prev_bbox=prevFrame.boundingBoxes.begin();
+                    prev_bbox != prevFrame.boundingBoxes.end();
+                    prev_bbox++) {
+                bbox_count[prev_bbox->boxID][max_idx] = 0; // clear the best match for the rest
+            }
+        }
+    }
+
+    // visualize results
+    bool bVis = true;
+    if (bVis)
+    {
+        auto cur_img = currFrame.cameraImg;
+        auto prev_img = prevFrame.cameraImg;
+        for(auto data: sorted_box_ids) {
+            auto box_id = data.first;
+            auto kpts_count = data.second;
+            auto cur_box_id = bbBestMatches[box_id];
+            auto curr_bbox_it = get_bbox_from_boxid(currFrame.boundingBoxes, cur_box_id);
+            cv::Mat visImage = cur_img.clone();
+            string label = cv::format("%d", cur_box_id);
+            draw_boxes(visImage, curr_bbox_it->roi, label);
+            string windowName = "BBox of current frame";
+            cv::namedWindow(windowName, cv::WINDOW_AUTOSIZE);
+            imshow(windowName, visImage);
+
+            visImage = prev_img.clone();
+            auto prev_box_id = box_id;
+            auto prev_bbox_it = get_bbox_from_boxid(prevFrame.boundingBoxes, prev_box_id);
+            label = cv::format("%d", prev_box_id);
+            draw_boxes(visImage, prev_bbox_it->roi, label);
+            windowName = "BBox of prev frame";
+            cv::namedWindow(windowName, cv::WINDOW_AUTOSIZE);
+            imshow(windowName, visImage);
+            cv::waitKey(0);
+        }
+    }
 }

@@ -63,12 +63,13 @@ float shrinkFactor, cv::Mat &P_rect_xx, cv::Mat &R_rect_xx, cv::Mat &RT)
             // add Lidar point to bounding box
             enclosingBoxes[0]->lidarPoints.push_back(*it1);
         }
-
     } // eof loop over all Lidar points
 }
 
-
-void show3DObjects(std::vector<BoundingBox> &boundingBoxes, cv::Size worldSize, cv::Size imageSize, bool bWait)
+void show3DObjects(
+    std::vector<BoundingBox> &boundingBoxes, 
+    cv::Size worldSize, 
+    cv::Size imageSize, bool bWait)
 {
     // create topview image
     cv::Mat topviewImg(imageSize, CV_8UC3, cv::Scalar(255, 255, 255));
@@ -138,24 +139,85 @@ void show3DObjects(std::vector<BoundingBox> &boundingBoxes, cv::Size worldSize, 
 
 
 // associate a given bounding box with the keypoints it contains
-void clusterKptMatchesWithROI(BoundingBox &boundingBox, std::vector<cv::KeyPoint> &kptsPrev, std::vector<cv::KeyPoint> &kptsCurr, std::vector<cv::DMatch> &kptMatches)
+void clusterKptMatchesWithROI(
+    BoundingBox &boundingBox, 
+    std::vector<cv::KeyPoint> &kptsPrev, 
+    std::vector<cv::KeyPoint> &kptsCurr, 
+    std::vector<cv::DMatch> &kptMatches)
 {
-    // ...
+    // for each of the keypoint matches
+    // check if the trainIdx lies within
+    // the current bounding box
+    for(auto kptmat = kptMatches.begin();
+        kptmat != kptMatches.end();
+        kptmat++) {
+        // find the current frame bounding box for the matching keypoint
+        auto cur_kpt = kptsCurr[kptmat->trainIdx];
+        if (boundingBox.roi.contains(cur_kpt.pt)) {
+            boundingBox.keypoints.push_back(cur_kpt);
+        }
+    }
+
+    cout << boundingBox.boxID << ":" << boundingBox.keypoints.size() << endl;
 }
 
 
-// Compute time-to-collision (TTC) based on keypoint correspondences in successive images
-void computeTTCCamera(std::vector<cv::KeyPoint> &kptsPrev, std::vector<cv::KeyPoint> &kptsCurr, 
-                      std::vector<cv::DMatch> kptMatches, double frameRate, double &TTC, cv::Mat *visImg)
+// Compute time-to-collision (TTC) based on keypoint
+// correspondences in successive images
+void computeTTCCamera(
+    std::vector<cv::KeyPoint> &kptsPrev, 
+    std::vector<cv::KeyPoint> &kptsCurr, 
+    std::vector<cv::DMatch> kptMatches, 
+    double frameRate, double &TTC, cv::Mat *visImg)
 {
-    // ...
+    //
 }
 
+float median(vector<float> &v)
+{
+    size_t n = v.size() / 2;
+    nth_element(v.begin(), v.begin()+n, v.end());
+    return v[n];
+}
+
+void limit_lidar_points(std::vector<LidarPoint> &lidarPoints,
+                        std::vector<float>& lidar_distance,
+                        int lane_width)
+{
+    lidar_distance.clear();
+    for(auto point : lidarPoints) {
+        if (abs(point.y) <= (lane_width / 2))
+            lidar_distance.push_back(point.x);
+    }
+}
 
 void computeTTCLidar(std::vector<LidarPoint> &lidarPointsPrev,
-                     std::vector<LidarPoint> &lidarPointsCurr, double frameRate, double &TTC)
+                     std::vector<LidarPoint> &lidarPointsCurr, 
+                     double frameRate, double &TTC)
 {
-    // ...
+    bool use_median=true;
+    int lane_width = 4.0;
+
+    // median of distance estimate from the previous frame
+    std::vector<float> lidar_distance(lidarPointsPrev.size(), 0.);
+    limit_lidar_points(lidarPointsPrev, lidar_distance, lane_width);
+    float d0_min = *min_element(lidar_distance.begin(), lidar_distance.end());
+    float d0 = median(lidar_distance);
+
+    // median of distance estimate from the current frame
+    limit_lidar_points(lidarPointsCurr, lidar_distance, lane_width);
+    float d1_min = *min_element(lidar_distance.begin(), lidar_distance.end());
+    float d1 = median(lidar_distance);
+    cout << d1_min  << "," << d1 << endl;
+
+    // compute time for collision by median or min approach
+    // It is safer to use the median based approach
+    if (use_median)
+        TTC = d1 / frameRate * (d0 - d1);
+    else
+    {
+        TTC = d1_min / frameRate * (d0_min - d1_min);
+    }   
 }
 
 void draw_boxes(cv::Mat& visImg, cv::Rect& roi, std::string label) 
@@ -297,7 +359,7 @@ void matchBoundingBoxes(
     }
 
     // visualize results
-    bool bVis = true;
+    bool bVis = false;
     if (bVis)
     {
         auto cur_img = currFrame.cameraImg;

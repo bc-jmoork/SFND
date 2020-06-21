@@ -18,4 +18,9 @@ void computeTTCCamera(std::vector<cv::KeyPoint> &kptsPrev, std::vector<cv::KeyPo
                       std::vector<cv::DMatch> kptMatches, double frameRate, double &TTC, cv::Mat *visImg=nullptr);
 void computeTTCLidar(std::vector<LidarPoint> &lidarPointsPrev,
                      std::vector<LidarPoint> &lidarPointsCurr, double frameRate, double &TTC);                  
+void draw_boxes(cv::Mat& visImg, cv::Rect& roi, std::string label);
+
+// returns the bounding box that matches the bounding box id
+std::vector<BoundingBox>::iterator get_bbox_from_boxid(std::vector<BoundingBox>& bbox, int boxid);
+
 #endif /* camFusion_hpp */

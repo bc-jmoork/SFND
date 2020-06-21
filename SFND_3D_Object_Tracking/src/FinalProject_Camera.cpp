@@ -22,11 +22,32 @@
 
 using namespace std;
 
+void test_camera_keypoint()
+{
+    vector<cv::KeyPoint> data_prev;
+    data_prev.push_back(cv::KeyPoint(cv::Point(20, 20), 1.0));    
+    data_prev.push_back(cv::KeyPoint(cv::Point(300, 300), 1.0));  
+    data_prev.push_back(cv::KeyPoint(cv::Point(400, 400), 1.0));    
+
+    vector<cv::KeyPoint> data_curr;
+    data_curr.push_back(cv::KeyPoint(cv::Point(25, 25), 1.0));    
+    data_curr.push_back(cv::KeyPoint(cv::Point(450, 450), 1.0));    
+    data_curr.push_back(cv::KeyPoint(cv::Point(460, 460), 1.0));    
+
+    vector<cv::DMatch> matches;
+    matches.push_back(cv::DMatch(0, 0, 1.0));
+    matches.push_back(cv::DMatch(1, 1, 2.0));
+    matches.push_back(cv::DMatch(2, 2, 2.0));
+
+    double ttc = 0.;
+    computeTTCCamera(data_prev, data_curr, matches, 5.0, ttc);
+    cout << ttc << endl;
+}
+
 /* MAIN PROGRAM */
 int main(int argc, const char *argv[])
 {
     /* INIT VARIABLES AND DATA STRUCTURES */
-
     // data location
     string dataPath = "../";
 
@@ -100,7 +121,7 @@ int main(int argc, const char *argv[])
 
         float confThreshold = 0.2;
         float nmsThreshold = 0.4;      
-        bVis = true;  
+        bVis = false;  
         detectObjects((dataBuffer.end() - 1)->cameraImg, (dataBuffer.end() - 1)->boundingBoxes, confThreshold, nmsThreshold,
                       yoloBasePath, yoloClassesFile, yoloModelConfiguration, yoloModelWeights, bVis);
 
@@ -150,7 +171,7 @@ int main(int argc, const char *argv[])
 
         // extract 2D keypoints from current image
         vector<cv::KeyPoint> keypoints; // create empty feature list for current image
-        string detectorType = "SHITOMASI";
+        string detectorType = "SIFT";
 
         if (detectorType.compare("SHITOMASI") == 0)
         {
@@ -222,7 +243,6 @@ int main(int argc, const char *argv[])
                 bbBestMatches, 
                 *(dataBuffer.end()-2), 
                 *(dataBuffer.end()-1)); 
-            //// EOF STUDENT ASSIGNMENT
 
             // store matches in current data frame
             (dataBuffer.end()-1)->bbMatches = bbBestMatches;
@@ -268,10 +288,14 @@ int main(int argc, const char *argv[])
                         (dataBuffer.end() - 2)->keypoints, 
                         (dataBuffer.end() - 1)->keypoints, 
                         currBB->kptMatches, sensorFrameRate, 
-                        ttcCamera);
+                        ttcCamera,
+                        &(dataBuffer.end() - 1)->cameraImg);
                     //// EOF STUDENT ASSIGNMENT
 
-                    bVis = true;
+                    cout << imgIndex << ": TTC-Camera = " << ttcCamera << endl;
+                    cout << imgIndex << ": TTC-Lidar = " << ttcLidar << endl;
+
+                    bVis = false;
                     if (bVis)
                     {
                         cv::Mat visImg = (dataBuffer.end() - 1)->cameraImg.clone();

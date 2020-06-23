@@ -21,11 +21,10 @@ using namespace std;
 /* MAIN PROGRAM */
 int main(int argc, const char *argv[])
 {
-
-    //// -> HARRIS, FAST, BRISK, ORB, AKAZE, SIFT
-    string detectorType = "SIFT";
+    // SHITOMASI, HARRIS, FAST, BRISK, ORB, AKAZE, SIFT
+    string detectorType = "HARRIS";
     //vector<string> descriptorTypes = {"BRIEF", "ORB", "FREAK", "AKAZE", "SIFT"};
-    // vector<string> descriptorTypes = {"SIFT"};
+    vector<string> descriptorTypes = {"SIFT"};
     
     for (auto descriptorType : descriptorTypes) {
 
@@ -50,6 +49,10 @@ int main(int argc, const char *argv[])
         /* MAIN LOOP OVER ALL IMAGES */
         vector<int> keypoint_size;
         vector<int> matches_size;
+        double total_time_keypoints = 0.;
+        double total_time_descriptors = 0.;
+        int total_keypoints = 0;
+        int total_descriptor_points =0;
         for (size_t imgIndex = 0; imgIndex <= imgEndIndex - imgStartIndex; imgIndex++)
         {
             /* LOAD IMAGE INTO BUFFER */
@@ -84,7 +87,8 @@ int main(int argc, const char *argv[])
 
             //// STUDENT ASSIGNMENT
             //// TASK MP.2 -> add the following keypoint detectors in file matching2D.cpp and enable string-based selection based on detectorType
-            //// -> HARRIS, FAST, BRISK, ORB, AKAZE, SIFT
+            //// -> SHITOMASI, HARRIS, FAST, BRISK, ORB, AKAZE, SIFT
+            double t = (double)cv::getTickCount();
             if (detectorType.compare("SHITOMASI") == 0)
             {
                 detKeypointsShiTomasi(keypoints, imgGray, false);
@@ -95,6 +99,10 @@ int main(int argc, const char *argv[])
             else {
                 detKeypointsModern(keypoints, imgGray, detectorType, false);
             }
+            t = ((double)cv::getTickCount() - t) / cv::getTickFrequency();
+            total_time_keypoints += t;
+            cout << t << endl;
+            total_keypoints += keypoints.size();
 
             //// STUDENT ASSIGNMENT
             //// TASK MP.3 -> only keep keypoints on the preceding vehicle
@@ -114,7 +122,6 @@ int main(int argc, const char *argv[])
                     }
                 }
             }
-
             keypoints = selected_points;
             cout << detectorType << " found " << keypoints.size() << " keypoints" << endl;
             keypoint_size.push_back(keypoints.size());
@@ -122,7 +129,7 @@ int main(int argc, const char *argv[])
             //// EOF STUDENT ASSIGNMENT
 
             // optional : limit number of keypoints (helpful for debugging and learning)
-            bool bLimitKpts = false;
+            bool bLimitKpts = true;
             if (bLimitKpts)
             {
                 int maxKeypoints = 50;
@@ -156,11 +163,16 @@ int main(int argc, const char *argv[])
             //// STUDENT ASSIGNMENT
             //// TASK MP.4 -> add the following descriptors in file matching2D.cpp and enable string-based selection based on descriptorType
             //// -> BRIEF, ORB, FREAK, AKAZE, SIFT
+            t = (double)cv::getTickCount();
             descKeypoints((dataBuffer.end() - 1)->keypoints, 
                         (dataBuffer.end() - 1)->cameraImg, 
                         descriptors, 
                         descriptorType);
             //// EOF STUDENT ASSIGNMENT
+            t = ((double)cv::getTickCount() - t) / cv::getTickFrequency();
+            total_time_descriptors += t;
+            cout << t << endl;
+            total_descriptor_points +=  (dataBuffer.end() - 1)->keypoints.size();
 
             // push descriptors for current frame to end of data buffer
             (dataBuffer.end() - 1)->descriptors = descriptors;
@@ -216,11 +228,9 @@ int main(int argc, const char *argv[])
         cout << "******************************" << endl;
         cout << "Keypoint name: " << detectorType << endl;
         cout << "Descriptor name: " << descriptorType << endl;
-        int total_keypoints = 0;
         cout << "Keypoint sizes:" << endl;
         for (auto val : keypoint_size) {
             cout << val << ",";
-            total_keypoints += val;
         }
         cout << endl;
         cout << "Total keypoints: " << total_keypoints << endl;
@@ -234,6 +244,13 @@ int main(int argc, const char *argv[])
         cout << endl;
         cout << "Total matches: " << total_matches << endl;
         cout << "******************************" << endl;
+
+        cout << "Total Keypoints: " << total_keypoints << endl;
+        cout << "Total Descriptors:" << total_descriptor_points <<endl;
+        cout << "Computation time in sec:" << total_time_keypoints << endl;
+        cout << "Computation time in sec:" << total_time_descriptors  << endl;
+        cout << "Computation time per keypoint:" << (total_time_keypoints / total_keypoints) * 1000.0 << " ms" << endl;
+        cout << "Computation time per descriptor:" << (total_time_descriptors / total_descriptor_points) * 1000.0 << " ms" << endl;
     }
     return 0;
 }

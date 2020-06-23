@@ -102,9 +102,9 @@ void detKeypointsHarris(std::vector<cv::KeyPoint> &keypoints, cv::Mat &img, bool
     keypoints.clear();
 
     // Detector parameters
-    int blockSize = 2;     // for every pixel, a blockSize × blockSize neighborhood is considered
+    int blockSize = 5;     // for every pixel, a blockSize × blockSize neighborhood is considered
     int apertureSize = 3;  // aperture parameter for Sobel operator (must be odd)
-    int minResponse = 100; // minimum value for a corner in the 8bit scaled response matrix
+    int minResponse = 75; // minimum value for a corner in the 8bit scaled response matrix
     double k = 0.04;       // Harris parameter (see equation for details)
 
     // Detect Harris corners
@@ -146,6 +146,7 @@ void detKeypointsHarris(std::vector<cv::KeyPoint> &keypoints, cv::Mat &img, bool
         }
     }
     t = ((double)cv::getTickCount() - t) / cv::getTickFrequency();
+    cout << "number of keypoints:" << keypoints.size() << endl;
     cout << "Harris Keypoint Detector" << " descriptor extraction in " << 1000 * t / 1.0 << " ms" << endl;
 
     // visualize results

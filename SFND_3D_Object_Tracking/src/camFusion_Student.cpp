@@ -15,6 +15,14 @@
 using namespace std;
 
 
+void shrink_bounding_box(cv::Rect& inputBox, cv::Rect& outputBox, float shrinkFactor)
+{
+    outputBox.x = inputBox.x + shrinkFactor * inputBox.width / 2.0;
+    outputBox.y = inputBox.y + shrinkFactor * inputBox.height / 2.0;
+    outputBox.width =inputBox.width * (1 - shrinkFactor);
+    outputBox.height = inputBox.height * (1 - shrinkFactor);
+}
+
 // Create groups of Lidar points whose projection into the camera falls into the same bounding box
 void clusterLidarWithROI(std::vector<BoundingBox> &boundingBoxes, 
 std::vector<LidarPoint> &lidarPoints, 
@@ -43,10 +51,7 @@ float shrinkFactor, cv::Mat &P_rect_xx, cv::Mat &R_rect_xx, cv::Mat &RT)
         {
             // shrink current bounding box slightly to avoid having too many outlier points around the edges
             cv::Rect smallerBox;
-            smallerBox.x = (*it2).roi.x + shrinkFactor * (*it2).roi.width / 2.0;
-            smallerBox.y = (*it2).roi.y + shrinkFactor * (*it2).roi.height / 2.0;
-            smallerBox.width = (*it2).roi.width * (1 - shrinkFactor);
-            smallerBox.height = (*it2).roi.height * (1 - shrinkFactor);
+            shrink_bounding_box((*it2).roi, smallerBox, shrinkFactor);
 
             // check wether point is within current bounding box
             if (smallerBox.contains(pt))
@@ -156,6 +161,15 @@ T mean(std::vector<T>& data)
     return accumulate(data.begin(), data.end(), 0.) / (1.0 * data.size());
 }
 
+template<typename T>
+T standard_deviation(std::vector<T>& data) 
+{
+    double mean_val = mean(data);
+    double sq_sum = std::inner_product(data.begin(), data.end(), data.begin(),  0.0);
+    double stddev = std::sqrt(sq_sum/data.size() - (mean_val * mean_val));
+    return stddev; 
+}
+
 // associate a given bounding box with the keypoints it contains
 void clusterKptMatchesWithROI(
     BoundingBox &boundingBox, 
@@ -163,6 +177,9 @@ void clusterKptMatchesWithROI(
     std::vector<cv::KeyPoint> &kptsCurr, 
     std::vector<cv::DMatch> &kptMatches)
 {
+    // shrink and save the smaller bounding box
+    // shrink_bounding_box(boundingBox.roi, boundingBox.roi, 0.1);
+
     // for each of the keypoint matches
     // check if the trainIdx lies within
     // the current bounding box
@@ -171,6 +188,8 @@ void clusterKptMatchesWithROI(
         kptmat++) {
         // find the current frame bounding box for the matching keypoint
         auto cur_kpt = kptsCurr[kptmat->trainIdx];
+        // shrink the bounding box ROI
+
         if (boundingBox.roi.contains(cur_kpt.pt)) {
             boundingBox.keypoints.push_back(cur_kpt);
             boundingBox.kptMatches.push_back(*kptmat);
@@ -190,8 +209,11 @@ void clusterKptMatchesWithROI(
 
     // remove outliers based on the median data
     double median_data = median<double>(all_distances);
+    double std_dev_val = standard_deviation<double>(all_distances);
     double dist_min = 0.5 * median_data;
     double dist_max = 1.5 * median_data;
+    dist_min = 0;
+    dist_max = 50;
     all_distances.clear();
     for (auto it = boundingBox.kptMatches.begin();
          it != boundingBox.kptMatches.end(); ) {
@@ -233,23 +255,26 @@ void computeTTCCamera(
     double min_dist = 100.0;
     vector<double> distRatios; // saves all the compute TTC for median
     vector<double> ttc_data;
-    for(auto kptmatch1: kptMatches) {
-        auto kptCurr1 = kptsCurr[kptmatch1.trainIdx];
-        auto kptPrev1 = kptsPrev[kptmatch1.queryIdx];
+    for (auto kptmatch1 = kptMatches.begin(); kptmatch1 != kptMatches.end(); ++kptmatch1) {
+        auto kptCurr1 = kptsCurr[kptmatch1->trainIdx];
+        auto kptPrev1 = kptsPrev[kptmatch1->queryIdx];
         bool valid_data = false;
-        for (auto kptmatch2: kptMatches) {
-            auto kptCurr2 = kptsCurr[kptmatch2.trainIdx];
-            auto kptPrev2 = kptsPrev[kptmatch2.queryIdx];
+        for (auto kptmatch2 = kptmatch1 + 1; kptmatch2 != kptMatches.end(); ++kptmatch2) { 
+            auto kptCurr2 = kptsCurr[kptmatch2->trainIdx];
+            auto kptPrev2 = kptsPrev[kptmatch2->queryIdx];
             double dist_prev = cv::norm(kptPrev2.pt - kptPrev1.pt);
             double dist_curr = cv::norm(kptCurr2.pt - kptCurr1.pt);
-            
             if (dist_prev > std::numeric_limits<double>::epsilon() 
                 && dist_curr >= min_dist) {
                     valid_data = true;
                     pair<cv::Point, cv::Point> pair_points(kptCurr2.pt, kptCurr1.pt);
                     valid_points.push_back(pair_points);
                     double distRatio = dist_curr/dist_prev;
-                    distRatios.push_back(distRatio);
+                    double dT = 1 / frameRate;
+                    TTC = -dT / (1 - distRatio);    
+                    if (TTC > 0) {
+                        distRatios.push_back(distRatio);
+                    }
             }
         }
         if (valid_data)
@@ -257,32 +282,39 @@ void computeTTCCamera(
     }
 
     // only continue if list of distance ratios is not empty
-    if (distRatios.size() == 0)
-    {
+    if (distRatios.size() == 0) {
         TTC = NAN;
-        return;
+        cout << "No valid dist ratio data found !" << endl;
+    }
+    else {
+        // compute camera-based TTC from distance ratios
+        double medianDistRatio = median<double>(distRatios);
+        double meanDistRatio = mean<double>(distRatios);
+        double dT = 1 / frameRate;
+        TTC = -dT / (1 - meanDistRatio);
+        cout << "TTC_camera (mean):" << TTC << endl;
+        TTC = -dT / (1 - medianDistRatio);
+        cout << "TTC_camera (median):" << TTC << endl;
     }
 
-    // compute camera-based TTC from distance ratios
-    double medianDistRatio = median<double>(distRatios);
-    double dT = 1 / frameRate;
-    TTC = -dT / (1 - medianDistRatio);
-
-    bool bVis = false;
+    bool bVis = true;
     if (bVis) {
         cv::Mat visImg = img->clone();
         cv::drawKeypoints(*img, valid_key_points, visImg, cv::Scalar::all(-1), cv::DrawMatchesFlags::DRAW_RICH_KEYPOINTS);
         string windowName = "Keypoints";
         cv::namedWindow(windowName, 6);
+        cv::resize(visImg, visImg, cv::Size(), 2, 2, cv::INTER_CUBIC);
         cv::imshow(windowName, visImg);
-
         windowName = "Keypoint Matches";
+
+        visImg = img->clone();
+        cv::drawKeypoints(*img, valid_key_points, visImg, cv::Scalar::all(-1), cv::DrawMatchesFlags::DRAW_RICH_KEYPOINTS);
         for(auto pair_points: valid_points) {
             cv::line(visImg, pair_points.first, pair_points.second, cv::Scalar(0,255,255));
         }
         cv::namedWindow(windowName, 6);
+        cv::resize(visImg, visImg, cv::Size(), 2, 2, cv::INTER_CUBIC);
         cv::imshow(windowName, visImg);
-        cv::waitKey(0);
     }
 }
 
@@ -301,18 +333,22 @@ void computeTTCLidar(std::vector<LidarPoint> &lidarPointsPrev,
 
     // median of distance estimate from the current frame
     limit_lidar_points(lidarPointsCurr, lidar_distance, lane_width);
-    float d_min_cur = *min_element(lidar_distance.begin(), lidar_distance.end());
+    float dmin_cur = *min_element(lidar_distance.begin(), lidar_distance.end());
     float d_cur = median<float>(lidar_distance);
 
     double dT = 1 / frameRate;
     // compute time for collision by median or min approach
     // It is safer to use the median based approach
-    if (use_median)
-        TTC = dT / (d_prev/d_cur - 1);
-    else
-    {
-        TTC = dT / (dmin_prev/d_min_cur - 1);
-    }   
+    double TTC_median = dT / (d_prev/d_cur - 1);
+    double TTC_min = dT / (dmin_prev/dmin_cur - 1);
+    cout << "d_min (prev, cur): " << dmin_cur << "," << dmin_prev << endl;
+    cout << "d_med (prev, cur): " << d_cur << "," << d_prev << endl;
+    cout << "TTC_Median: " << TTC_median << endl;
+    cout << "TTC_Min: " << TTC_min << endl;
+    if (abs(TTC_median - TTC_min) > 1.0) {
+        cout << " ********* Large TTC Difference" << endl;
+    }
+    TTC = TTC_median;
 }
 
 void draw_boxes(cv::Mat& visImg, cv::Rect& roi, std::string label) 

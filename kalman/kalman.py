@@ -185,7 +185,7 @@ class KalmanFilter(object):
         self._P = self._F * self._P * self._F.transpose()
 
     def __str__(self):
-        return 'X = {}, P={}'.format(str(self._x), str(self._P))
+        return 'X = {}\nP = {}'.format(str(self._x), str(self._P))
 
 
 ############################################
@@ -206,10 +206,13 @@ kalman = KalmanFilter(initial_estimate=x,
                       state_transistion_matrix=F,
                       measurement_function=H)
 print(kalman)
+
 for n in range(len(measurements)):
     kalman.measurement_update(measurement=measurements[n],
                        measurement_noise=R)
-    print(kalman)
+    print("After Measurement:\n" + str(kalman))
 
     kalman.prediction_update(motion_mean=u)
-    print(kalman)
+    print("After Prediction:\n" + str(kalman))
+
+print("Final:\n" + str(kalman))
